@@ -66,15 +66,17 @@
     </main>
   </div>
 
-  <!-- Supabase settings (demo) -->
+  <!-- Supabase settings (demo/public anon key) -->
   <script>
+    // NOTE: these are public anon values used by the demo client
     const SUPABASE_URL = "https://qrpfvpabycejszblghan.supabase.co";
     const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFycGZ2cGFieWNlanN6YmxnaGFuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMwMjgxMTEsImV4cCI6MjA3ODYwNDExMX0.zzByoK0opa6uwNVlZnaKqHil69X1pE4Y_5V0lWI5txk";
   </script>
 
-  <!-- Supabase UMD build (global 'supabase' object) -->
+  <!-- Supabase UMD build (exports global `supabase`) -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js/dist/umd/supabase.min.js"></script>
 
+  <!-- App script (must run after the two scripts above) -->
   <script src="/assets/app.js"></script>
 </body>
 </html>
