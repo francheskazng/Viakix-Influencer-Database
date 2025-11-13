@@ -1,4 +1,6 @@
 // Client app implementing list/detail, filters, product offers, outreach selection, CSV export, pagination
+// Updated to use the new table columns layout: account_name, email, platform, social_url, category, state,
+// followers, engagement_rate, view_rate, contact, status
 const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // Config
@@ -12,12 +14,36 @@ const SANDALS = [
   "Rebel Sandal"
 ];
 
+// States & Categories (kept from earlier)
+const STATES = [
+  "Alabama","Alaska","Arizona","Arkansas","California","Colorado","Connecticut","Delaware",
+  "Florida","Georgia","Hawaii","Idaho","Illinois","Indiana","Iowa","Kansas","Kentucky",
+  "Louisiana","Maine","Maryland","Massachusetts","Michigan","Minnesota","Mississippi",
+  "Missouri","Montana","Nebraska","Nevada","New Hampshire","New Jersey","New Mexico",
+  "New York","North Carolina","North Dakota","Ohio","Oklahoma","Oregon","Pennsylvania",
+  "Rhode Island","South Carolina","South Dakota","Tennessee","Texas","Utah","Vermont",
+  "Virginia","Washington","West Virginia","Wisconsin","Wyoming","N/A"
+];
+
+const CATEGORIES = [
+  "Hiking/Backpacking",
+  "Running",
+  "Outdoors",
+  "Travel",
+  "Pets",
+  "Van Life",
+  "Camping",
+  "Fishing/Hunting",
+  "Other"
+];
+
 let influencers = []; // full dataset from DB
 let filtered = [];    // computed after search+filter
 let currentPage = 1;
 
 // DOM refs
 const stateFilter = document.getElementById('state-filter');
+const categoryFilter = document.getElementById('category-filter');
 const searchInput = document.getElementById('search-input');
 const tableWrapper = document.getElementById('table-wrapper');
 const pagination = document.getElementById('pagination');
@@ -28,38 +54,52 @@ const refreshBtn = document.getElementById('refresh-btn');
 const detailView = document.getElementById('detail-view');
 const listView = document.getElementById('list-view');
 
+function populateStateAndCategoryOptions(){
+  stateFilter.innerHTML = '<option value="__all">All states</option>';
+  STATES.forEach(s => {
+    const opt = document.createElement('option'); opt.value = s; opt.textContent = s; stateFilter.appendChild(opt);
+  });
+  categoryFilter.innerHTML = '<option value="__all">All categories</option>';
+  CATEGORIES.forEach(c => {
+    const opt = document.createElement('option'); opt.value = c; opt.textContent = c; categoryFilter.appendChild(opt);
+  });
+}
+
 async function fetchInfluencers(){
+  // select all columns; adjust if you want to limit fields
   const { data, error } = await supabase.from('influencers').select('*');
   if(error){ console.error(error); alert('Error loading data (see console)'); return; }
   influencers = data.map(i => {
     try{
+      // keep outreach_log normalized as object
       if (!i.outreach_log) i.outreach_log = {};
       else if (typeof i.outreach_log === 'string') i.outreach_log = JSON.parse(i.outreach_log);
     }catch(e){ i.outreach_log = {}; }
     return i;
   });
-  computeFilters();
-  renderTable();
-}
-
-function computeFilters(){
-  const states = new Set(influencers.map(i=>i.state).filter(Boolean));
-  stateFilter.innerHTML = '<option value="__all">All states</option>';
-  states.forEach(s=>{
-    const opt = document.createElement('option'); opt.value = s; opt.textContent = s; stateFilter.appendChild(opt);
-  });
+  populateStateAndCategoryOptions();
   applyFilters();
 }
 
 function applyFilters(){
   const state = stateFilter.value;
+  const category = categoryFilter.value;
   const q = searchInput.value.trim().toLowerCase();
   filtered = influencers.filter(i=>{
-    if(state && state!=="__all" && i.state !== state) return false;
+    // state match (treat missing as N/A)
+    if(state && state!=="__all"){
+      const rowState = i.state ? i.state : 'N/A';
+      if(rowState !== state) return false;
+    }
+    // category match (support category or niche if older rows)
+    if(category && category!=="__all"){
+      const rowCat = i.category ? i.category : (i.niche ? i.niche : '');
+      if(rowCat !== category) return false;
+    }
     if(q){
-      const name = (i.name||'').toLowerCase();
-      const handle = (i.social_handle||'').toLowerCase();
-      if(!name.includes(q) && !handle.includes(q)) return false;
+      const name = (i.account_name||'').toLowerCase();
+      const url = (i.social_url||'').toLowerCase();
+      if(!name.includes(q) && !url.includes(q)) return false;
     }
     return true;
   });
@@ -76,26 +116,63 @@ function renderTable(){
 
   const table = document.createElement('table');
   const thead = document.createElement('thead');
+  // Columns in the exact order you provided
   thead.innerHTML = `<tr>
-    <th>Name</th><th>Email</th><th>Platform</th><th>Handle</th><th>State</th><th>Followers</th><th>Offers</th><th>Selected</th><th>Actions</th>
+    <th>Account Name</th>
+    <th>Email</th>
+    <th>Platform</th>
+    <th>Social URL</th>
+    <th>Category</th>
+    <th>State</th>
+    <th>Followers</th>
+    <th>Engagement Rate</th>
+    <th>View Rate</th>
+    <th>Contact</th>
+    <th>Status</th>
+    <th>Offers</th>
+    <th>Selected</th>
+    <th>Actions</th>
   </tr>`;
   table.appendChild(thead);
 
   const tbody = document.createElement('tbody');
   pageItems.forEach(row=>{
-    const tr = document.createElement('tr');
     const offers = (row.outreach_log && row.outreach_log.offers) ? row.outreach_log.offers : [];
+    const contactVal = (typeof row.contact !== 'undefined') ? row.contact : (typeof row.contacted !== 'undefined' ? row.contacted : false);
+    const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td>${escapeHtml(row.name||'')}</td>
+      <td>${escapeHtml(row.account_name||'')}</td>
       <td>${escapeHtml(row.email||'')}</td>
-      <td>${escapeHtml(row.social_platform||'')}</td>
-      <td>${escapeHtml(row.social_handle||'')}</td>
+      <td>${escapeHtml(row.platform||'')}</td>
+      <td>${escapeHtml(row.social_url||'')}</td>
+      <td>${escapeHtml(row.category || row.niche || '')}</td>
       <td>${escapeHtml(row.state||'')}</td>
       <td>${escapeHtml(row.followers==null ? '' : row.followers)}</td>
+      <td>${escapeHtml(row.engagement_rate==null ? '' : row.engagement_rate)}</td>
+      <td>${escapeHtml(row.view_rate==null ? '' : row.view_rate)}</td>
+      <td class="contact-cell"></td>
+      <td>${escapeHtml(row.status||'')}</td>
       <td class="offers-cell"></td>
       <td class="selected-cell"></td>
       <td class="row-actions"></td>
     `;
+
+    // contact checkbox/display
+    const contactCell = tr.querySelector('.contact-cell');
+    const contactCb = document.createElement('input');
+    contactCb.type = 'checkbox';
+    contactCb.checked = !!contactVal;
+    contactCb.onchange = async ()=>{
+      // attempt to persist to 'contact' column, fall back to 'contacted'
+      const fieldName = ('contact' in row) ? 'contact' : (('contacted' in row) ? 'contacted' : 'contact');
+      const updateObj = {}; updateObj[fieldName] = contactCb.checked;
+      const { error } = await supabase.from('influencers').update(updateObj).eq('id', row.id);
+      if(error){ console.error('Update contact error', error); alert('Failed to save contact'); }
+      row[fieldName] = contactCb.checked;
+    };
+    contactCell.appendChild(contactCb);
+
+    // offer buttons
     const offersCell = tr.querySelector('.offers-cell');
     SANDALS.forEach(s=>{
       const btn = document.createElement('button');
@@ -109,15 +186,17 @@ function renderTable(){
       offersCell.appendChild(btn);
     });
 
+    // selected for outreach checkbox
     const selectedCell = tr.querySelector('.selected-cell');
-    const cb = document.createElement('input');
-    cb.type = 'checkbox';
-    cb.checked = !!(row.outreach_log && row.outreach_log.selected_for_outreach);
-    cb.onchange = async ()=>{
-      await setSelectedForOutreach(row.id, cb.checked);
+    const selCb = document.createElement('input');
+    selCb.type = 'checkbox';
+    selCb.checked = !!(row.outreach_log && row.outreach_log.selected_for_outreach);
+    selCb.onchange = async ()=>{
+      await setSelectedForOutreach(row.id, selCb.checked);
     };
-    selectedCell.appendChild(cb);
+    selectedCell.appendChild(selCb);
 
+    // actions
     const actionsCell = tr.querySelector('.row-actions');
     const viewBtn = document.createElement('button');
     viewBtn.className = 'btn';
@@ -184,20 +263,22 @@ function renderDetail(item){
   detailView.innerHTML = '';
   const form = document.createElement('form');
   form.innerHTML = `
-    <h2>Edit: ${escapeHtml(item.name || '')}</h2>
-    <div class="detail-row"><label>Name</label><input class="input" name="name" value="${escapeHtml(item.name||'')}" /></div>
+    <h2>Edit: ${escapeHtml(item.account_name || '')}</h2>
+    <div class="detail-row"><label>Account Name</label><input class="input" name="account_name" value="${escapeHtml(item.account_name||'')}" /></div>
     <div class="detail-row"><label>Email</label><input class="input" name="email" value="${escapeHtml(item.email||'')}" /></div>
-    <div class="detail-row"><label>Platform</label><input class="input" name="social_platform" value="${escapeHtml(item.social_platform||'')}" /></div>
-    <div class="detail-row"><label>Handle</label><input class="input" name="social_handle" value="${escapeHtml(item.social_handle||'')}" /></div>
+    <div class="detail-row"><label>Platform</label><input class="input" name="platform" value="${escapeHtml(item.platform||'')}" /></div>
+    <div class="detail-row"><label>Social URL</label><input class="input" name="social_url" value="${escapeHtml(item.social_url||'')}" /></div>
     <div class="detail-row"><label>State</label><input class="input" name="state" value="${escapeHtml(item.state||'')}" /></div>
+    <div class="detail-row"><label>Category</label><input class="input" name="category" value="${escapeHtml(item.category || item.niche || '')}" /></div>
     <div class="detail-row"><label>Followers</label><input class="input" name="followers" value="${escapeHtml(item.followers||'')}" /></div>
+    <div class="detail-row"><label>Engagement Rate</label><input class="input" name="engagement_rate" value="${escapeHtml(item.engagement_rate||'')}" /></div>
+    <div class="detail-row"><label>View Rate</label><input class="input" name="view_rate" value="${escapeHtml(item.view_rate||'')}" /></div>
+    <div class="detail-row"><label>Contact</label><label class="checkbox-inline"><input name="contact" type="checkbox" ${item.contact || item.contacted ? 'checked' : ''} /> Contact</label></div>
+    <div class="detail-row"><label>Status</label><input class="input" name="status" value="${escapeHtml(item.status||'')}" /></div>
     <div class="detail-row"><label>Notes</label><textarea name="notes" rows="3">${escapeHtml(item.notes||'')}</textarea></div>
     <div class="detail-row"><label>Campaign name</label><input class="input" name="campaign_name" value="${escapeHtml((item.outreach_log && item.outreach_log.campaign_name) || '')}" /></div>
     <div class="detail-row"><label>Custom message</label><textarea name="custom_message" rows="3">${escapeHtml((item.outreach_log && item.outreach_log.custom_message) || '')}</textarea></div>
     <div class="detail-row offers-area"></div>
-    <div class="detail-row">
-      <label class="checkbox-inline"><input name="selected_for_outreach" type="checkbox" ${item.outreach_log && item.outreach_log.selected_for_outreach ? 'checked' : ''} /> Selected for outreach</label>
-    </div>
     <div style="display:flex;gap:8px;margin-top:12px">
       <button class="btn primary" type="submit">Save</button>
       <button class="btn" id="back-btn" type="button">Back</button>
@@ -217,14 +298,22 @@ function renderDetail(item){
     e.preventDefault();
     const fd = new FormData(form);
     const updateObj = {
-      name: fd.get('name'),
+      account_name: fd.get('account_name'),
       email: fd.get('email'),
-      social_platform: fd.get('social_platform'),
-      social_handle: fd.get('social_handle'),
+      platform: fd.get('platform'),
+      social_url: fd.get('social_url'),
       state: fd.get('state'),
+      category: fd.get('category') || null,
       followers: fd.get('followers') ? parseInt(fd.get('followers')) : null,
+      engagement_rate: fd.get('engagement_rate') || null,
+      view_rate: fd.get('view_rate') || null,
+      status: fd.get('status') || null,
       notes: fd.get('notes'),
     };
+    // contact boolean: try to write to contact column, fall back to contacted if exists
+    const contactField = ('contact' in item) ? 'contact' : (('contacted' in item) ? 'contacted' : 'contact');
+    updateObj[contactField] = !!fd.get('contact');
+
     const outreach_log = item.outreach_log || {};
     outreach_log.selected_for_outreach = !!fd.get('selected_for_outreach');
     outreach_log.campaign_name = fd.get('campaign_name') || '';
@@ -249,19 +338,26 @@ function escapeHtml(s){ if(!s) return ''; return String(s).replace(/[&<>"']/g, c
 
 /* CSV export logic */
 function buildCsvRows(rows){
-  const headers = ['name','email','offered_products','social_platform','social_handle','followers','notes','influencer_id','campaign_name','custom_message'];
+  const headers = ['account_name','email','platform','social_url','category','state','followers','engagement_rate','view_rate','contact','status','offered_products','notes','influencer_id','campaign_name','custom_message'];
   const csv = [headers.join(',')];
   rows.forEach(r=>{
     const offers = (r.outreach_log && r.outreach_log.offers) ? r.outreach_log.offers.join(';') : '';
     const campaign = (r.outreach_log && r.outreach_log.campaign_name) ? r.outreach_log.campaign_name : '';
     const message = (r.outreach_log && r.outreach_log.custom_message) ? r.outreach_log.custom_message : '';
+    const contactVal = (typeof r.contact !== 'undefined') ? r.contact : (typeof r.contacted !== 'undefined' ? r.contacted : false);
     const line = [
-      csvEscape(r.name),
+      csvEscape(r.account_name),
       csvEscape(r.email),
-      csvEscape(offers),
-      csvEscape(r.social_platform),
-      csvEscape(r.social_handle),
+      csvEscape(r.platform),
+      csvEscape(r.social_url),
+      csvEscape(r.category || r.niche || ''),
+      csvEscape(r.state),
       csvEscape(r.followers),
+      csvEscape(r.engagement_rate),
+      csvEscape(r.view_rate),
+      csvEscape(contactVal),
+      csvEscape(r.status),
+      csvEscape(offers),
       csvEscape(r.notes),
       csvEscape(r.id),
       csvEscape(campaign),
@@ -292,7 +388,8 @@ async function doExport(){
   const csv = buildCsvRows(rows);
   if(markContactedCheckbox.checked){
     const ids = rows.map(r=>r.id);
-    const { error } = await supabase.from('influencers').update({ contacted: true }).in('id', ids);
+    // write to contact or contacted depending on schema
+    const { error } = await supabase.from('influencers').update({ contact: true }).in('id', ids);
     if(error) console.error('mark contacted error', error);
     fetchInfluencers();
   }
@@ -311,6 +408,7 @@ function downloadCSV(text, filename){
 // Wire events
 searchInput.oninput = () => applyFilters();
 stateFilter.onchange = () => applyFilters();
+categoryFilter.onchange = () => applyFilters();
 refreshBtn.onclick = () => fetchInfluencers();
 exportBtn.onclick = () => doExport();
 
