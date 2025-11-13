@@ -30,7 +30,12 @@
           <select id="state-filter">
             <option value="__all">All states</option>
           </select>
-          <input id="search-input" placeholder="Search name or handle" />
+
+          <select id="category-filter">
+            <option value="__all">All categories</option>
+          </select>
+
+          <input id="search-input" placeholder="Search account name or social URL" />
           <button id="refresh-btn" class="btn">Refresh</button>
         </div>
 
@@ -61,7 +66,7 @@
     </main>
   </div>
 
-  <!-- Supabase settings (you provided these earlier) -->
+  <!-- Supabase settings (demo) -->
   <script>
     const SUPABASE_URL = "https://qrpfvpabycejszblghan.supabase.co";
     const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFycGZ2cGFieWNlanN6YmxnaGFuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMwMjgxMTEsImV4cCI6MjA3ODYwNDExMX0.zzByoK0opa6uwNVlZnaKqHil69X1pE4Y_5V0lWI5txk";
