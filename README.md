@@ -154,3 +154,7 @@ This is a demo application. Check with the repository owner for licensing detail
 ## Support
 
 For issues or questions, please open an issue on the GitHub repository.
+
+---
+
+**Branch**: feat/ui-enhancements
