@@ -1,6 +1,5 @@
 // Client app implementing list/detail, filters, product offers, outreach selection, CSV export, pagination
-// Updated to use the new table columns layout: account_name, email, platform, social_url, category, state,
-// followers, engagement_rate, view_rate, contact, status
+// Updated: export button label change -> Export Outreach CSV; removed mark-exported logic
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // Config
@@ -14,7 +13,7 @@ const SANDALS = [
   "Rebel Sandal"
 ];
 
-// States & Categories (kept from earlier)
+// States & Categories
 const STATES = [
   "Alabama","Alaska","Arizona","Arkansas","California","Colorado","Connecticut","Delaware",
   "Florida","Georgia","Hawaii","Idaho","Illinois","Indiana","Iowa","Kansas","Kentucky",
@@ -24,7 +23,6 @@ const STATES = [
   "Rhode Island","South Carolina","South Dakota","Tennessee","Texas","Utah","Vermont",
   "Virginia","Washington","West Virginia","Wisconsin","Wyoming","N/A"
 ];
-
 const CATEGORIES = [
   "Hiking/Backpacking",
   "Running",
@@ -41,7 +39,7 @@ let influencers = []; // full dataset from DB
 let filtered = [];    // computed after search+filter
 let currentPage = 1;
 
-// DOM refs
+// DOM refs (note: markContactedCheckbox removed)
 const stateFilter = document.getElementById('state-filter');
 const categoryFilter = document.getElementById('category-filter');
 const searchInput = document.getElementById('search-input');
@@ -49,7 +47,6 @@ const tableWrapper = document.getElementById('table-wrapper');
 const pagination = document.getElementById('pagination');
 const exportBtn = document.getElementById('export-btn');
 const exportMode = document.getElementById('export-mode');
-const markContactedCheckbox = document.getElementById('mark-contacted');
 const refreshBtn = document.getElementById('refresh-btn');
 const detailView = document.getElementById('detail-view');
 const listView = document.getElementById('list-view');
@@ -65,13 +62,18 @@ function populateStateAndCategoryOptions(){
   });
 }
 
+function formatNumber2(v){
+  if(v == null || v === '') return '';
+  const n = parseFloat(v);
+  if(isNaN(n)) return '';
+  return n.toFixed(2);
+}
+
 async function fetchInfluencers(){
-  // select all columns; adjust if you want to limit fields
   const { data, error } = await supabase.from('influencers').select('*');
   if(error){ console.error(error); alert('Error loading data (see console)'); return; }
   influencers = data.map(i => {
     try{
-      // keep outreach_log normalized as object
       if (!i.outreach_log) i.outreach_log = {};
       else if (typeof i.outreach_log === 'string') i.outreach_log = JSON.parse(i.outreach_log);
     }catch(e){ i.outreach_log = {}; }
@@ -86,12 +88,10 @@ function applyFilters(){
   const category = categoryFilter.value;
   const q = searchInput.value.trim().toLowerCase();
   filtered = influencers.filter(i=>{
-    // state match (treat missing as N/A)
     if(state && state!=="__all"){
       const rowState = i.state ? i.state : 'N/A';
       if(rowState !== state) return false;
     }
-    // category match (support category or niche if older rows)
     if(category && category!=="__all"){
       const rowCat = i.category ? i.category : (i.niche ? i.niche : '');
       if(rowCat !== category) return false;
@@ -107,6 +107,11 @@ function applyFilters(){
   renderTable();
 }
 
+function sanitizeStatusClass(s){
+  if(!s) return 'Not\\ Contacted';
+  return String(s).replace(/\s+/g,'\\ ');
+}
+
 function renderTable(){
   listView.classList.remove('hidden');
   detailView.classList.add('hidden');
@@ -116,7 +121,6 @@ function renderTable(){
 
   const table = document.createElement('table');
   const thead = document.createElement('thead');
-  // Columns in the exact order you provided
   thead.innerHTML = `<tr>
     <th>Account Name</th>
     <th>Email</th>
@@ -127,10 +131,9 @@ function renderTable(){
     <th>Followers</th>
     <th>Engagement Rate</th>
     <th>View Rate</th>
-    <th>Contact</th>
+    <th>Outreach</th>
     <th>Status</th>
-    <th>Offers</th>
-    <th>Selected</th>
+    <th>Offer</th>
     <th>Actions</th>
   </tr>`;
   table.appendChild(thead);
@@ -138,7 +141,9 @@ function renderTable(){
   const tbody = document.createElement('tbody');
   pageItems.forEach(row=>{
     const offers = (row.outreach_log && row.outreach_log.offers) ? row.outreach_log.offers : [];
-    const contactVal = (typeof row.contact !== 'undefined') ? row.contact : (typeof row.contacted !== 'undefined' ? row.contacted : false);
+    const outreachVal = (typeof row.outreach !== 'undefined') ? row.outreach : (typeof row.contact !== 'undefined' ? row.contact : (typeof row.contacted !== 'undefined' ? row.contacted : false));
+    const statusText = row.status || 'Not Contacted';
+
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${escapeHtml(row.account_name||'')}</td>
@@ -148,53 +153,58 @@ function renderTable(){
       <td>${escapeHtml(row.category || row.niche || '')}</td>
       <td>${escapeHtml(row.state||'')}</td>
       <td>${escapeHtml(row.followers==null ? '' : row.followers)}</td>
-      <td>${escapeHtml(row.engagement_rate==null ? '' : row.engagement_rate)}</td>
-      <td>${escapeHtml(row.view_rate==null ? '' : row.view_rate)}</td>
-      <td class="contact-cell"></td>
-      <td>${escapeHtml(row.status||'')}</td>
-      <td class="offers-cell"></td>
-      <td class="selected-cell"></td>
+      <td>${escapeHtml(formatNumber2(row.engagement_rate))}</td>
+      <td>${escapeHtml(formatNumber2(row.view_rate))}</td>
+      <td class="outreach-cell"></td>
+      <td class="status-cell"></td>
+      <td class="offer-cell"></td>
       <td class="row-actions"></td>
     `;
 
-    // contact checkbox/display
-    const contactCell = tr.querySelector('.contact-cell');
-    const contactCb = document.createElement('input');
-    contactCb.type = 'checkbox';
-    contactCb.checked = !!contactVal;
-    contactCb.onchange = async ()=>{
-      // attempt to persist to 'contact' column, fall back to 'contacted'
-      const fieldName = ('contact' in row) ? 'contact' : (('contacted' in row) ? 'contacted' : 'contact');
-      const updateObj = {}; updateObj[fieldName] = contactCb.checked;
+    // outreach checkbox (primary outreach flag)
+    const outreachCell = tr.querySelector('.outreach-cell');
+    const outreachCb = document.createElement('input');
+    outreachCb.type = 'checkbox';
+    outreachCb.checked = !!outreachVal;
+    outreachCb.onchange = async ()=>{
+      const fieldName = ('outreach' in row) ? 'outreach' : (('contact' in row) ? 'contact' : (('contacted' in row) ? 'contacted' : 'outreach'));
+      const updateObj = {}; updateObj[fieldName] = outreachCb.checked;
       const { error } = await supabase.from('influencers').update(updateObj).eq('id', row.id);
-      if(error){ console.error('Update contact error', error); alert('Failed to save contact'); }
-      row[fieldName] = contactCb.checked;
+      if(error){ console.error('Update outreach error', error); alert('Failed to save outreach'); }
+      row[fieldName] = outreachCb.checked;
+      applyFilters();
     };
-    contactCell.appendChild(contactCb);
+    outreachCell.appendChild(outreachCb);
 
-    // offer buttons
-    const offersCell = tr.querySelector('.offers-cell');
+    // status badge cell
+    const statusCell = tr.querySelector('.status-cell');
+    const span = document.createElement('span');
+    span.className = 'status-badge status-' + sanitizeStatusClass(statusText);
+    span.textContent = statusText;
+    statusCell.appendChild(span);
+
+    // offer dropdown (single selection to keep row small)
+    const offerCell = tr.querySelector('.offer-cell');
+    const sel = document.createElement('select');
+    const noneOpt = document.createElement('option'); noneOpt.value = ''; noneOpt.textContent = '—';
+    sel.appendChild(noneOpt);
     SANDALS.forEach(s=>{
-      const btn = document.createElement('button');
-      btn.className = 'product-btn' + (offers.includes(s) ? ' active' : '');
-      btn.textContent = s.split(' ')[0];
-      btn.title = s;
-      btn.onclick = async (e)=>{
-        e.preventDefault();
-        toggleOffer(row.id, s);
-      };
-      offersCell.appendChild(btn);
+      const o = document.createElement('option');
+      o.value = s;
+      o.textContent = s;
+      sel.appendChild(o);
     });
-
-    // selected for outreach checkbox
-    const selectedCell = tr.querySelector('.selected-cell');
-    const selCb = document.createElement('input');
-    selCb.type = 'checkbox';
-    selCb.checked = !!(row.outreach_log && row.outreach_log.selected_for_outreach);
-    selCb.onchange = async ()=>{
-      await setSelectedForOutreach(row.id, selCb.checked);
+    sel.value = offers && offers.length ? offers[0] : '';
+    sel.onchange = async ()=>{
+      const chosen = sel.value ? [sel.value] : [];
+      const item = influencers.find(i=>i.id===row.id);
+      if(!item) return;
+      item.outreach_log = {...item.outreach_log, offers: chosen};
+      const { error } = await supabase.from('influencers').update({ outreach_log: item.outreach_log }).eq('id', row.id);
+      if(error){ console.error('Update outreach_log error', error); alert('Failed to save offer'); }
+      applyFilters();
     };
-    selectedCell.appendChild(selCb);
+    offerCell.appendChild(sel);
 
     // actions
     const actionsCell = tr.querySelector('.row-actions');
@@ -230,121 +240,17 @@ function renderPagination(){
   pagination.appendChild(next);
 }
 
-async function toggleOffer(id, offer){
-  const item = influencers.find(i=>i.id===id);
-  if(!item) return;
-  const offers = (item.outreach_log && item.outreach_log.offers) ? [...item.outreach_log.offers] : [];
-  const idx = offers.indexOf(offer);
-  if(idx === -1) offers.push(offer); else offers.splice(idx,1);
-  item.outreach_log = {...item.outreach_log, offers};
-  const { error } = await supabase.from('influencers').update({ outreach_log: item.outreach_log }).eq('id', id);
-  if(error){ console.error('Update outreach_log error', error); alert('Failed to save selection'); }
-  applyFilters();
-}
-
-async function setSelectedForOutreach(id, value){
-  const item = influencers.find(i=>i.id===id);
-  if(!item) return;
-  item.outreach_log = {...item.outreach_log, selected_for_outreach: !!value, last_outreach_selection_at: new Date().toISOString()};
-  const { error } = await supabase.from('influencers').update({ outreach_log: item.outreach_log }).eq('id', id);
-  if(error){ console.error('Update selected error', error); alert('Failed to save selection'); }
-  applyFilters();
-}
-
-function openDetail(id){
-  const item = influencers.find(i=>i.id===id);
-  if(!item) return;
-  listView.classList.add('hidden');
-  detailView.classList.remove('hidden');
-  renderDetail(item);
-}
-
-function renderDetail(item){
-  detailView.innerHTML = '';
-  const form = document.createElement('form');
-  form.innerHTML = `
-    <h2>Edit: ${escapeHtml(item.account_name || '')}</h2>
-    <div class="detail-row"><label>Account Name</label><input class="input" name="account_name" value="${escapeHtml(item.account_name||'')}" /></div>
-    <div class="detail-row"><label>Email</label><input class="input" name="email" value="${escapeHtml(item.email||'')}" /></div>
-    <div class="detail-row"><label>Platform</label><input class="input" name="platform" value="${escapeHtml(item.platform||'')}" /></div>
-    <div class="detail-row"><label>Social URL</label><input class="input" name="social_url" value="${escapeHtml(item.social_url||'')}" /></div>
-    <div class="detail-row"><label>State</label><input class="input" name="state" value="${escapeHtml(item.state||'')}" /></div>
-    <div class="detail-row"><label>Category</label><input class="input" name="category" value="${escapeHtml(item.category || item.niche || '')}" /></div>
-    <div class="detail-row"><label>Followers</label><input class="input" name="followers" value="${escapeHtml(item.followers||'')}" /></div>
-    <div class="detail-row"><label>Engagement Rate</label><input class="input" name="engagement_rate" value="${escapeHtml(item.engagement_rate||'')}" /></div>
-    <div class="detail-row"><label>View Rate</label><input class="input" name="view_rate" value="${escapeHtml(item.view_rate||'')}" /></div>
-    <div class="detail-row"><label>Contact</label><label class="checkbox-inline"><input name="contact" type="checkbox" ${item.contact || item.contacted ? 'checked' : ''} /> Contact</label></div>
-    <div class="detail-row"><label>Status</label><input class="input" name="status" value="${escapeHtml(item.status||'')}" /></div>
-    <div class="detail-row"><label>Notes</label><textarea name="notes" rows="3">${escapeHtml(item.notes||'')}</textarea></div>
-    <div class="detail-row"><label>Campaign name</label><input class="input" name="campaign_name" value="${escapeHtml((item.outreach_log && item.outreach_log.campaign_name) || '')}" /></div>
-    <div class="detail-row"><label>Custom message</label><textarea name="custom_message" rows="3">${escapeHtml((item.outreach_log && item.outreach_log.custom_message) || '')}</textarea></div>
-    <div class="detail-row offers-area"></div>
-    <div style="display:flex;gap:8px;margin-top:12px">
-      <button class="btn primary" type="submit">Save</button>
-      <button class="btn" id="back-btn" type="button">Back</button>
-    </div>
-  `;
-  const offersArea = form.querySelector('.offers-area');
-  const offers = (item.outreach_log && item.outreach_log.offers) ? item.outreach_log.offers : [];
-  SANDALS.forEach(s=>{
-    const b = document.createElement('button');
-    b.className = 'product-btn' + (offers.includes(s) ? ' active' : '');
-    b.textContent = s;
-    b.onclick = (e)=>{ e.preventDefault(); toggleOffer(item.id, s); b.classList.toggle('active'); };
-    offersArea.appendChild(b);
-  });
-
-  form.onsubmit = async (e)=>{
-    e.preventDefault();
-    const fd = new FormData(form);
-    const updateObj = {
-      account_name: fd.get('account_name'),
-      email: fd.get('email'),
-      platform: fd.get('platform'),
-      social_url: fd.get('social_url'),
-      state: fd.get('state'),
-      category: fd.get('category') || null,
-      followers: fd.get('followers') ? parseInt(fd.get('followers')) : null,
-      engagement_rate: fd.get('engagement_rate') || null,
-      view_rate: fd.get('view_rate') || null,
-      status: fd.get('status') || null,
-      notes: fd.get('notes'),
-    };
-    // contact boolean: try to write to contact column, fall back to contacted if exists
-    const contactField = ('contact' in item) ? 'contact' : (('contacted' in item) ? 'contacted' : 'contact');
-    updateObj[contactField] = !!fd.get('contact');
-
-    const outreach_log = item.outreach_log || {};
-    outreach_log.selected_for_outreach = !!fd.get('selected_for_outreach');
-    outreach_log.campaign_name = fd.get('campaign_name') || '';
-    outreach_log.custom_message = fd.get('custom_message') || '';
-    updateObj.outreach_log = outreach_log;
-
-    const { error } = await supabase.from('influencers').update(updateObj).eq('id', item.id);
-    if(error){ alert('Save failed'); console.error(error); return; }
-    Object.assign(item, updateObj);
-    fetchInfluencers();
-    listView.classList.remove('hidden'); detailView.classList.add('hidden');
-  };
-
-  form.querySelector('#back-btn').onclick = ()=>{
-    listView.classList.remove('hidden'); detailView.classList.add('hidden');
-  };
-
-  detailView.appendChild(form);
-}
-
 function escapeHtml(s){ if(!s) return ''; return String(s).replace(/[&<>"']/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[c])); }
 
 /* CSV export logic */
 function buildCsvRows(rows){
-  const headers = ['account_name','email','platform','social_url','category','state','followers','engagement_rate','view_rate','contact','status','offered_products','notes','influencer_id','campaign_name','custom_message'];
+  const headers = ['account_name','email','platform','social_url','category','state','followers','engagement_rate','view_rate','outreach','status','offered_products','notes','influencer_id','campaign_name','custom_message'];
   const csv = [headers.join(',')];
   rows.forEach(r=>{
     const offers = (r.outreach_log && r.outreach_log.offers) ? r.outreach_log.offers.join(';') : '';
     const campaign = (r.outreach_log && r.outreach_log.campaign_name) ? r.outreach_log.campaign_name : '';
     const message = (r.outreach_log && r.outreach_log.custom_message) ? r.outreach_log.custom_message : '';
-    const contactVal = (typeof r.contact !== 'undefined') ? r.contact : (typeof r.contacted !== 'undefined' ? r.contacted : false);
+    const outreachVal = (typeof r.outreach !== 'undefined') ? r.outreach : (typeof r.contact !== 'undefined' ? r.contact : (typeof r.contacted !== 'undefined' ? r.contacted : false));
     const line = [
       csvEscape(r.account_name),
       csvEscape(r.email),
@@ -353,10 +259,10 @@ function buildCsvRows(rows){
       csvEscape(r.category || r.niche || ''),
       csvEscape(r.state),
       csvEscape(r.followers),
-      csvEscape(r.engagement_rate),
-      csvEscape(r.view_rate),
-      csvEscape(contactVal),
-      csvEscape(r.status),
+      csvEscape(formatNumber2(r.engagement_rate)),
+      csvEscape(formatNumber2(r.view_rate)),
+      csvEscape(outreachVal),
+      csvEscape(r.status || 'Not Contacted'),
       csvEscape(offers),
       csvEscape(r.notes),
       csvEscape(r.id),
@@ -378,22 +284,20 @@ async function doExport(){
   const mode = exportMode.value;
   let rows = [];
   if(mode === 'selected'){
-    rows = influencers.filter(i => i.outreach_log && i.outreach_log.selected_for_outreach);
+    rows = influencers.filter(i => {
+      const selectedFlag = !!(i.outreach_log && i.outreach_log.selected_for_outreach);
+      const outreachFlag = (typeof i.outreach !== 'undefined') ? !!i.outreach : (!!i.contact || !!i.contacted);
+      return selectedFlag || outreachFlag;
+    });
   }else if(mode === 'filtered'){
     rows = filtered.slice();
   }else{
     rows = influencers.slice();
   }
   if(rows.length === 0){ alert('No influencers to export for this selection'); return; }
+  // Build CSV and immediately download. We no longer alter DB on export.
   const csv = buildCsvRows(rows);
-  if(markContactedCheckbox.checked){
-    const ids = rows.map(r=>r.id);
-    // write to contact or contacted depending on schema
-    const { error } = await supabase.from('influencers').update({ contact: true }).in('id', ids);
-    if(error) console.error('mark contacted error', error);
-    fetchInfluencers();
-  }
-  downloadCSV(csv, `viakix_export_${Date.now()}.csv`);
+  downloadCSV(csv, `viakix_outreach_export_${Date.now()}.csv`);
 }
 
 function downloadCSV(text, filename){
