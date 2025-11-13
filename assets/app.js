@@ -1,7 +1,7 @@
 // Client app implementing list/detail, filters, product offers, outreach selection, CSV export, pagination
 // Updated to use the new table columns layout: account_name, email, platform, social_url, category, state,
 // followers, engagement_rate, view_rate, contact, status
-const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // Config
 const PAGE_SIZE = 10;
