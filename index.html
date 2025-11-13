@@ -3,181 +3,33 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Viakix Influencer Database — Demo</title>
-  <style>
-    body { font-family: system-ui, -apple-system, Roboto, sans-serif; padding: 20px; background:#f7fafc; color:#111827 }
-    table { border-collapse: collapse; width: 100%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
-    th, td { padding: 8px 10px; border-bottom: 1px solid #e5e7eb; text-align:left; }
-    th { background:#f3f4f6; font-weight:600; }
-    tr:hover td { background:#fbfdff; }
-    .btn { background:#2563eb;color:#fff;padding:6px 10px;border-radius:6px;border:0;cursor:pointer }
-    .btn.secondary { background:#e5e7eb;color:#111 }
-    .input { width:100%; padding:6px; box-sizing:border-box; border:1px solid #e5e7eb; border-radius:4px }
-    header { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px }
-    small { color:#6b7280 }
-  </style>
+  <title>Viakix Influencer Database (Demo)</title>
+  <link rel="stylesheet" href="assets/styles.css" />
 </head>
 <body>
-  <header>
-    <div>
-      <h1>Viakix Influencer Database (Demo)</h1>
-      <small>Simple editable demo — inline edits saved to Supabase</small>
-    </div>
-    <div id="auth-area">
-      <input id="email" class="input" placeholder="you@company.com" style="width:220px;margin-right:8px" />
-      <button id="signin" class="btn">Send magic link</button>
-      <button id="signout" class="btn secondary" style="display:none">Sign out</button>
+  <header class="site-header">
+    <div class="header-content">
+      <div class="header-left">
+        <img src="assets/viakix-logo.svg" alt="VIAKIX" class="logo" />
+        <div class="header-title">
+          <h1>Viakix Influencer Database (Demo)</h1>
+          <small>Simple editable demo — inline edits saved to Supabase</small>
+        </div>
+      </div>
+      <div class="header-right">
+        <input id="email" class="input" placeholder="you@company.com" style="width:220px" />
+        <button id="signin" class="btn btn-primary">Send magic link</button>
+        <button id="signout" class="btn btn-secondary" style="display:none">Sign out</button>
+      </div>
     </div>
   </header>
 
-  <div style="margin-bottom:12px">
-    <button id="refresh" class="btn secondary">Refresh</button>
-    <button id="export" class="btn" style="margin-left:8px">Export CSV</button>
+  <div class="container">
+    <div id="app">
+      <div class="loading">Loading...</div>
+    </div>
   </div>
 
-  <div id="table-wrap">Loading...</div>
-
-  <script type="module">
-    // Supabase values filled from your input
-    const SUPABASE_URL = 'https://qrpfvpabycejszblghan.supabase.co';
-    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFycGZ2cGFieWNlanN6YmxnaGFuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMwMjgxMTEsImV4cCI6MjA3ODYwNDExMX0.zzByoK0opa6uwNVlZnaKqHil69X1pE4Y_5V0lWI5txk';
-
-    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm';
-    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-    const tableWrap = document.getElementById('table-wrap');
-    const refreshBtn = document.getElementById('refresh');
-    const exportBtn = document.getElementById('export');
-    const signinBtn = document.getElementById('signin');
-    const signoutBtn = document.getElementById('signout');
-    const emailInput = document.getElementById('email');
-
-    let currentUser = null;
-
-    async function load() {
-      tableWrap.innerHTML = 'Loading...';
-      const { data, error } = await supabase.from('influencers').select('*').order('created_at', { ascending: false }).limit(500);
-      if (error) {
-        tableWrap.innerHTML = '<div style="color:red">Error loading data: ' + error.message + '</div>';
-        return;
-      }
-      renderTable(data || []);
-    }
-
-    function renderTable(rows) {
-      if (!rows.length) {
-        tableWrap.innerHTML = '<div style="padding:12px;background:#fff">No rows found</div>';
-        return;
-      }
-      const columns = ['name','email','social_platform','social_handle','category','state','followers','engagement_rate','view_rate','contacted'];
-      const ths = columns.map(c => `<th>${c.replace(/_/g,' ')}</th>`).join('') + '<th>Actions</th>';
-      const trs = rows.map(row => {
-        const cells = columns.map(col => {
-          const val = row[col] === null || row[col] === undefined ? '' : row[col];
-          const editable = col !== 'contacted';
-          return `<td contenteditable="${editable}" data-col="${col}" data-id="${row.id}">${escapeHtml(String(val))}</td>`;
-        }).join('');
-        return `<tr data-id="${row.id}">${cells}<td>
-          <button class="btn save" data-id="${row.id}">Save</button>
-        </td></tr>`;
-      }).join('');
-      tableWrap.innerHTML = `<table><thead><tr>${ths}</tr></thead><tbody>${trs}</tbody></table>`;
-      attachListeners();
-    }
-
-    function attachListeners() {
-      document.querySelectorAll('.save').forEach(btn => {
-        btn.onclick = async () => {
-          const id = btn.dataset.id;
-          const rowEl = document.querySelector('tr[data-id="'+id+'"]');
-          const payload = {};
-          rowEl.querySelectorAll('td[data-id]').forEach(td => {
-            const col = td.getAttribute('data-col');
-            let v = td.innerText.trim();
-            if (col === 'followers') v = v ? parseInt(v,10) : null;
-            if (col === 'engagement_rate' || col === 'view_rate') v = v ? parseFloat(v) : null;
-            payload[col] = v;
-          });
-          try {
-            const { error } = await supabase.from('influencers').update(payload).eq('id', id);
-            if (error) alert('Save failed: ' + error.message);
-            else {
-              btn.textContent = 'Saved';
-              setTimeout(()=> btn.textContent = 'Save', 1200);
-            }
-          } catch (err) {
-            alert('Save error: ' + err.message);
-          }
-        };
-      });
-    }
-
-    refreshBtn.onclick = () => load();
-
-    exportBtn.onclick = async () => {
-      const { data, error } = await supabase.from('influencers').select('*').limit(10000);
-      if (error) return alert('Export failed: ' + error.message);
-      const csv = convertToCSV(data || []);
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
-      a.download = 'influencers.csv';
-      a.click();
-    };
-
-    // auth
-    signinBtn.onclick = async () => {
-      const email = emailInput.value.trim();
-      if (!email) return alert('Enter an email');
-      const { error } = await supabase.auth.signInWithOtp({ email });
-      if (error) alert('Sign-in error: ' + error.message);
-      else alert('Magic link sent — open email and click the link in the same browser');
-    };
-    signoutBtn.onclick = async () => {
-      await supabase.auth.signOut();
-      currentUser = null;
-      updateAuthUI();
-    };
-
-    async function checkSession() {
-      const { data } = await supabase.auth.getSession();
-      currentUser = data.session?.user ?? null;
-      updateAuthUI();
-    }
-
-    function updateAuthUI() {
-      if (currentUser) {
-        signinBtn.style.display = 'none';
-        emailInput.style.display = 'none';
-        signoutBtn.style.display = 'inline-block';
-        signoutBtn.textContent = 'Sign out (' + (currentUser.email || currentUser.id) + ')';
-      } else {
-        signinBtn.style.display = 'inline-block';
-        emailInput.style.display = 'inline-block';
-        signoutBtn.style.display = 'none';
-      }
-    }
-
-    function escapeHtml(s) {
-      return s.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
-    }
-
-    function convertToCSV(arr) {
-      if (!arr || !arr.length) return '';
-      const keys = Object.keys(arr[0]);
-      const header = keys.join(',') + '\n';
-      const rows = arr.map(r => keys.map(k => `"${String(r[k] ?? '').replace(/"/g,'""')}"`).join(',')).join('\n');
-      return header + rows;
-    }
-
-    // startup
-    checkSession();
-    load();
-
-    // listen for realtime changes (basic)
-    supabase.channel('public:influencers').on('postgres_changes', { event: '*', schema: 'public', table: 'influencers' }, () => {
-      load();
-    }).subscribe();
-
-  </script>
+  <script type="module" src="assets/app.js"></script>
 </body>
 </html>
